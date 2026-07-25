@@ -1,42 +1,46 @@
-const router = require("express").Router();
+const { wrapRouter } = require("../middleware/asyncHandler");
+const router = wrapRouter(require("express").Router());
 const { requiereAutenticacion, requiereRol } = require("../middleware/auth");
-const { Empresa, Usuario } = require("../models");
-const { enviarCorreo } = require("../services/aws/ses");
+const admin = require("../controllers/adminController");
 
 router.use(requiereAutenticacion, requiereRol("administrador"));
 
-// RF-A06: listar empresas pendientes de validación
-router.get("/empresas/pendientes", async (req, res) => {
-  const empresas = await Empresa.findAll({
-    where: { estatus_validacion: "pendiente" },
-    include: [{ model: Usuario, attributes: ["correo"] }],
-  });
-  return res.json(empresas);
-});
+// RF-A01 a RF-A05: usuarios
+router.get("/usuarios", admin.listarUsuarios);
+router.get("/usuarios/:id", admin.detalleUsuario);
+router.put("/usuarios/:id/estatus", admin.cambiarEstatusUsuario);
+router.delete("/usuarios/:id", admin.eliminarUsuario);
+router.post("/usuarios/:id/restablecer-password", admin.restablecerPasswordUsuario);
 
-// RF-A07: aprobar o rechazar, con comentario obligatorio si se rechaza
-router.put("/empresas/:id/validar", async (req, res) => {
-  const { aprobar, motivo } = req.body;
-  const empresa = await Empresa.findByPk(req.params.id, { include: [Usuario] });
-  if (!empresa) return res.status(404).json({ error: "Empresa no encontrada" });
+// RF-A06 a RF-A08: validación de empresas y bitácora
+router.get("/empresas/pendientes", admin.empresasPendientes);
+router.put("/empresas/:id/validar", admin.validarEmpresa);
+router.get("/bitacora", admin.verBitacora);
 
-  if (!aprobar && !motivo) {
-    return res.status(400).json({ error: "El motivo de rechazo es obligatorio" });
-  }
+// RF-A09 a RF-A11: moderación de vacantes
+router.get("/vacantes", admin.todasLasVacantes);
+router.put("/vacantes/:id/dar-de-baja", admin.darDeBajaVacante);
 
-  empresa.estatus_validacion = aprobar ? "aprobada" : "rechazada";
-  empresa.motivo_rechazo = aprobar ? null : motivo;
-  await empresa.save();
+// RF-A12/RF-A13: IA
+router.get("/configuracion-ia", admin.verConfiguracionIA);
+router.put("/configuracion-ia", admin.actualizarConfiguracionIA);
+router.get("/examenes", admin.historialExamenes);
 
-  // RF-EM04: notificar por correo el resultado de la validación
-  await enviarCorreo({
-    para: empresa.Usuario.correo,
-    asunto: aprobar ? "Tu cuenta empresarial fue aprobada" : "Tu cuenta empresarial fue rechazada",
-    texto: aprobar ? "Ya puedes publicar vacantes en PractiLink." : `Motivo: ${motivo}`,
-  });
+// RF-A15/RF-A16/RF-A17: reportes y dashboard
+router.get("/dashboard", admin.dashboardGlobal);
+router.get("/reportes/usuarios.csv", admin.exportarUsuariosCSV);
 
-  // TODO (RF-A08): registrar en bitacora_auditoria quién validó y cuándo.
-  return res.json(empresa);
-});
+// RF-A18: catálogos (tipo: universidades | carreras)
+router.get("/catalogos/:tipo", admin.listarCatalogo);
+router.post("/catalogos/:tipo", admin.agregarCatalogo);
+router.delete("/catalogos/:tipo/:id", admin.eliminarCatalogo);
+
+// RF-A20: subadministradores
+router.get("/administradores", admin.listarAdministradores);
+router.post("/administradores", admin.crearAdministrador);
+
+// RF-A22: avisos
+router.get("/avisos", admin.listarAvisos);
+router.post("/avisos", admin.crearAviso);
 
 module.exports = router;
