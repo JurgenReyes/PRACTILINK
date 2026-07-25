@@ -1,4 +1,5 @@
-const router = require("express").Router();
+const { wrapRouter } = require("../middleware/asyncHandler");
+const router = wrapRouter(require("express").Router());
 const vacantes = require("../controllers/vacanteController");
 const { requiereAutenticacion, requiereRol } = require("../middleware/auth");
 
