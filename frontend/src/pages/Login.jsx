@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export default function Login() {
@@ -8,6 +8,8 @@ export default function Login() {
   const [error, setError] = useState("");
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const sesionExpirada = params.get("expirada") === "1";
 
   async function manejarSubmit(e) {
     e.preventDefault();
@@ -23,24 +25,30 @@ export default function Login() {
   }
 
   return (
-    <div className="container-narrow">
-      <div className="card">
-        <h2>Iniciar sesión</h2>
+    <div className="auth-wrap">
+      <div className="card auth-box">
+        <div className="auth-brand">
+          <img src="/logo2.png" alt="PractiLink" style={{ height: 90, width: "auto" }} />
+        </div>
+        {sesionExpirada && !error && (
+          <div className="alert alert-error">Tu sesión expiró. Inicia sesión de nuevo para continuar.</div>
+        )}
         {error && <div className="alert alert-error">{error}</div>}
         <form onSubmit={manejarSubmit}>
           <div className="form-field">
-            <label>Correo institucional o corporativo</label>
+            <label>Correo electrónico</label>
             <input type="email" value={correo} onChange={(e) => setCorreo(e.target.value)} required />
           </div>
           <div className="form-field">
             <label>Contraseña</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </div>
-          <button className="btn btn-primary btn-block" type="submit">Entrar</button>
+          <p style={{ textAlign: "right", marginTop: -8 }}>
+            <Link to="/recuperar-password" style={{ fontSize: 12.5 }}>¿Olvidaste tu contraseña?</Link>
+          </p>
+          <button className="btn btn-primary btn-block" type="submit">Iniciar sesión</button>
         </form>
-        <p style={{ marginTop: 16, fontSize: 13 }}>
-          ¿No tienes cuenta? <Link to="/registro">Regístrate aquí</Link>
-        </p>
+        <Link to="/registro" className="btn btn-accent btn-block" style={{ marginTop: 10 }}>Regístrate</Link>
       </div>
     </div>
   );
