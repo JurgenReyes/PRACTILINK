@@ -10,6 +10,12 @@ const Postulacion = sequelize.define("Postulacion", {
     defaultValue: "en_revision",
   },
   matching_score: { type: DataTypes.DECIMAL(5, 2) },
+  notas_internas: { type: DataTypes.TEXT },
+  fecha_entrevista: { type: DataTypes.DATE },
+  modalidad_entrevista: { type: DataTypes.ENUM("presencial", "videollamada") },
+  enlace_videollamada: { type: DataTypes.STRING(255) },
+  notas_entrevista: { type: DataTypes.STRING(255) },
+  entrevista_confirmada: { type: DataTypes.BOOLEAN, defaultValue: false },
 }, {
   tableName: "postulaciones",
   createdAt: "fecha_postulacion",

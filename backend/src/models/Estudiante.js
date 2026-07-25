@@ -11,6 +11,7 @@ const Estudiante = sequelize.define("Estudiante", {
   promedio: { type: DataTypes.DECIMAL(3, 1) },
   foto_url: { type: DataTypes.STRING(255) },
   porcentaje_perfil: { type: DataTypes.INTEGER, defaultValue: 0 },
+  experiencia_laboral: { type: DataTypes.JSON }, // arreglo de {puesto, empresa, periodo, descripcion}
 }, {
   tableName: "estudiantes",
   createdAt: "fecha_creacion",
