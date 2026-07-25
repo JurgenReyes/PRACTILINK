@@ -1,7 +1,8 @@
-const router = require("express").Router();
+const { wrapRouter } = require("../middleware/asyncHandler");
+const router = wrapRouter(require("express").Router());
 const multer = require("multer");
 const { requiereAutenticacion, requiereRol } = require("../middleware/auth");
-const { Estudiante } = require("../models");
+const { Estudiante, Habilidad } = require("../models");
 const { subirArchivo } = require("../services/aws/s3");
 const { analizarCV } = require("../services/ia/analisisCV");
 
@@ -31,6 +32,30 @@ router.put("/perfil", requiereAutenticacion, requiereRol("estudiante"), async (r
   await estudiante.save();
 
   return res.json(estudiante);
+});
+
+// RF-E14: habilidades, certificaciones e idiomas del estudiante
+router.get("/habilidades", requiereAutenticacion, requiereRol("estudiante"), async (req, res) => {
+  const estudiante = await Estudiante.findOne({ where: { id_usuario: req.usuario.id_usuario } });
+  if (!estudiante) return res.status(404).json({ error: "Perfil no encontrado" });
+  const habilidades = await Habilidad.findAll({ where: { id_estudiante: estudiante.id_estudiante } });
+  return res.json(habilidades);
+});
+
+router.post("/habilidades", requiereAutenticacion, requiereRol("estudiante"), async (req, res) => {
+  const estudiante = await Estudiante.findOne({ where: { id_usuario: req.usuario.id_usuario } });
+  if (!estudiante) return res.status(404).json({ error: "Perfil no encontrado" });
+  const { nombre, tipo, nivel, institucion, fecha } = req.body;
+  if (!nombre || !tipo) return res.status(400).json({ error: "Nombre y tipo son obligatorios" });
+  const habilidad = await Habilidad.create({ id_estudiante: estudiante.id_estudiante, nombre, tipo, nivel, institucion, fecha: fecha || null });
+  return res.status(201).json(habilidad);
+});
+
+router.delete("/habilidades/:id", requiereAutenticacion, requiereRol("estudiante"), async (req, res) => {
+  const estudiante = await Estudiante.findOne({ where: { id_usuario: req.usuario.id_usuario } });
+  if (!estudiante) return res.status(404).json({ error: "Perfil no encontrado" });
+  await Habilidad.destroy({ where: { id_habilidad: req.params.id, id_estudiante: estudiante.id_estudiante } });
+  return res.json({ mensaje: "Habilidad eliminada" });
 });
 
 // RF-E16 a RF-E20: carga y análisis de CV
