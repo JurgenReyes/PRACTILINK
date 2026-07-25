@@ -1,23 +1,30 @@
 import { useEffect, useState } from "react";
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { useApi } from "../hooks/useApi";
 
 export default function Vacantes() {
-  const [vacantes, setVacantes] = useState([]);
+  const [filtrosAplicados, setFiltrosAplicados] = useState({});
   const [filtros, setFiltros] = useState({ q: "", modalidad: "", ubicacion: "" });
-  const [cargando, setCargando] = useState(true);
   const [mensaje, setMensaje] = useState("");
+  const [favoritos, setFavoritos] = useState([]);
   const { rol } = useAuth();
 
-  async function buscar() {
-    setCargando(true);
-    const params = Object.fromEntries(Object.entries(filtros).filter(([, v]) => v));
-    const { data } = await api.get("/vacantes", { params });
-    setVacantes(data);
-    setCargando(false);
+  const { datos: vacantes, cargando, error: errorCarga } = useApi("/vacantes", filtrosAplicados);
+
+  function buscar() {
+    setFiltrosAplicados(Object.fromEntries(Object.entries(filtros).filter(([, v]) => v)));
   }
 
-  useEffect(() => { buscar(); }, []);
+  async function cargarFavoritos() {
+    if (rol !== "estudiante") return;
+    try {
+      const { data } = await api.get("/favoritos");
+      setFavoritos(data.map((f) => f.id_vacante));
+    } catch { /* si falla, simplemente no se marcan favoritos existentes */ }
+  }
+
+  useEffect(() => { cargarFavoritos(); }, []);
 
   async function postularse(id_vacante) {
     setMensaje("");
@@ -26,6 +33,20 @@ export default function Vacantes() {
       setMensaje("Postulación enviada correctamente.");
     } catch (err) {
       setMensaje(err.response?.data?.error || "No se pudo completar la postulación");
+    }
+  }
+
+  async function alternarFavorito(id_vacante) {
+    try {
+      if (favoritos.includes(id_vacante)) {
+        await api.delete(`/favoritos/${id_vacante}`);
+        setFavoritos((f) => f.filter((id) => id !== id_vacante));
+      } else {
+        await api.post(`/favoritos/${id_vacante}`);
+        setFavoritos((f) => [...f, id_vacante]);
+      }
+    } catch (err) {
+      setMensaje(err.response?.data?.error || "No se pudo actualizar tus favoritos");
     }
   }
 
@@ -57,25 +78,34 @@ export default function Vacantes() {
       </div>
 
       {mensaje && <div className="alert alert-success">{mensaje}</div>}
+      {errorCarga && <div className="alert alert-error">{errorCarga}</div>}
 
       {cargando ? (
         <p>Cargando vacantes…</p>
-      ) : vacantes.length === 0 ? (
+      ) : !vacantes || vacantes.length === 0 ? (
         <div className="empty-state">No se encontraron vacantes con esos filtros.</div>
       ) : (
-        <div className="grid grid-2">
+        <div className="grid grid-3">
           {vacantes.map((v) => (
             <div key={v.id_vacante} className="card vacante-card">
-              <h3 style={{ fontSize: 18 }}>{v.titulo}</h3>
-              <span className="empresa">{v.Empresa?.nombre_empresa}</span>
+              <h3 style={{ fontSize: 16 }}>{v.titulo}</h3>
+              <span className="empresa">🏢 {v.Empresa?.nombre_empresa}</span>
               <div className="tags">
                 <span className="tag">{v.modalidad}</span>
                 {v.ubicacion && <span className="tag">{v.ubicacion}</span>}
                 {v.duracion_meses && <span className="tag">{v.duracion_meses} meses</span>}
               </div>
-              <p style={{ fontSize: 14, color: "var(--color-ink-soft)" }}>{v.requisitos?.slice(0, 140)}</p>
+              {v.apoyo_economico && (
+                <div style={{ fontWeight: 700, fontSize: 14 }}>${Number(v.apoyo_economico).toLocaleString()} MXN / mes</div>
+              )}
+              <p style={{ fontSize: 13, color: "var(--color-ink-soft)" }}>{v.requisitos?.slice(0, 110)}</p>
               {rol === "estudiante" && (
-                <button className="btn btn-outline" onClick={() => postularse(v.id_vacante)}>Postularme</button>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <button className="btn btn-accent" onClick={() => postularse(v.id_vacante)}>Postularme</button>
+                  <button className="btn btn-outline" onClick={() => alternarFavorito(v.id_vacante)}>
+                    {favoritos.includes(v.id_vacante) ? "★ Guardada" : "☆ Guardar"}
+                  </button>
+                </div>
               )}
             </div>
           ))}
