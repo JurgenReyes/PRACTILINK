@@ -11,4 +11,22 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Si el backend responde 401 (token inválido, expirado o ausente), la sesión
+// local ya no sirve de nada: se limpia y se manda a /login en vez de dejar
+// a la persona viendo una pantalla protegida rota con errores por todos lados.
+api.interceptors.response.use(
+  (respuesta) => respuesta,
+  (error) => {
+    if (error.response?.status === 401) {
+      const teniaSesion = localStorage.getItem("token");
+      localStorage.removeItem("token");
+      localStorage.removeItem("rol");
+      if (teniaSesion && window.location.pathname !== "/login") {
+        window.location.href = "/login?expirada=1";
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export default api;
