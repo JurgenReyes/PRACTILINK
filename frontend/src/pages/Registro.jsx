@@ -26,9 +26,12 @@ export default function Registro() {
   }
 
   return (
-    <div className="container-narrow">
-      <div className="card">
-        <h2>Crear cuenta</h2>
+    <div className="auth-wrap">
+      <div className="card auth-box" style={{ width: 420 }}>
+        <div className="auth-brand">
+          <img src="/logo2.png" alt="PractiLink" style={{ height: 90, width: "auto" }} />
+        </div>
+        <h2 style={{ fontSize: 18 }}>Registro de {rol === "estudiante" ? "Estudiante" : "Empresa"}</h2>
 
         <div className="form-field">
           <label>Tipo de cuenta</label>
@@ -95,8 +98,11 @@ export default function Registro() {
             <input type="password" required onChange={(e) => actualizar("password", e.target.value)} />
           </div>
 
-          <button className="btn btn-primary btn-block" type="submit">Registrarme</button>
+          <button className="btn btn-primary btn-block" type="submit">Crear cuenta</button>
         </form>
+        <p style={{ textAlign: "center", fontSize: 12.5, marginTop: 12 }}>
+          ¿Ya tienes cuenta? <a href="/login">Inicia sesión</a>
+        </p>
       </div>
     </div>
   );
