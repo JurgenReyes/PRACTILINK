@@ -1,0 +1,89 @@
+name: Docker CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: [self-hosted, Q/A]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Construir imagen de backend
+        shell: bash
+        run: docker build -t practilink-backend:ci ./backend
+
+      - name: Construir imagen de frontend
+        shell: bash
+        run: docker build -t practilink-frontend:ci --build-arg VITE_API_URL=http://localhost:4000/api ./frontend
+
+      - name: Construir imagen de mysql (con datos precargados)
+        shell: bash
+        run: docker build -t practilink-mysql:ci -f ./backend/database/docker/Dockerfile ./backend/database
+
+      - name: Apagar cualquier stack anterior (por si quedo algo corriendo)
+        shell: bash
+        run: docker compose down -v || true
+
+      - name: Levantar el stack completo con docker compose
+        shell: bash
+        run: docker compose up -d --build
+        env:
+          DB_ROOT_PASSWORD: Practilink2026!
+          JWT_SECRET: secreto_de_pruebas_ci
+
+      - name: Esperar a que MySQL este healthy
+        shell: bash
+        run: |
+          for i in $(seq 1 30); do
+            estado=$(docker inspect --format='{{.State.Health.Status}}' practilink_mysql 2>/dev/null || echo "esperando")
+            echo "Intento $i: $estado"
+            if [ "$estado" = "healthy" ]; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "MySQL nunca quedo healthy"
+          docker compose logs mysql
+          exit 1
+
+      - name: Verificar que el backend responde (/api/salud)
+        shell: bash
+        run: |
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:4000/api/salud; then
+              echo ""
+              echo "Backend respondio correctamente."
+              exit 0
+            fi
+            echo "Intento $i: backend todavia no responde..."
+            sleep 3
+          done
+          echo "El backend nunca respondio en /api/salud"
+          docker compose logs backend
+          exit 1
+
+      - name: Verificar que el frontend sirve contenido
+        shell: bash
+        run: |
+          if curl -sf http://localhost:5173 | grep -qi "practilink\|<!doctype html>"; then
+            echo "Frontend respondio correctamente."
+          else
+            echo "El frontend no respondio como se esperaba."
+            docker compose logs frontend
+            exit 1
+          fi
+
+      - name: Mostrar logs si algo fallo
+        if: failure()
+        shell: bash
+        run: docker compose logs
+
+      - name: Apagar el stack
+        if: always()
+        shell: bash
+        run: docker compose down -v
