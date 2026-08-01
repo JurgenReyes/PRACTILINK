@@ -20,6 +20,7 @@ router.get("/bitacora", admin.verBitacora);
 // RF-A09 a RF-A11: moderación de vacantes
 router.get("/vacantes", admin.todasLasVacantes);
 router.put("/vacantes/:id/dar-de-baja", admin.darDeBajaVacante);
+router.put("/vacantes/:id/descartar-reporte", admin.descartarReporteVacante);
 
 // RF-A12/RF-A13: IA
 router.get("/configuracion-ia", admin.verConfiguracionIA);
@@ -28,7 +29,14 @@ router.get("/examenes", admin.historialExamenes);
 
 // RF-A15/RF-A16/RF-A17: reportes y dashboard
 router.get("/dashboard", admin.dashboardGlobal);
+router.get("/dashboard.pdf", admin.exportarDashboardPDF);
 router.get("/reportes/usuarios.csv", admin.exportarUsuariosCSV);
+router.get("/reportes/bitacora.csv", admin.exportarBitacoraCSV);
+router.get("/reportes/bitacora.pdf", admin.exportarBitacoraPDF);
+
+// Plantillas de correo automático
+router.get("/plantillas-correo", admin.listarPlantillasCorreo);
+router.put("/plantillas-correo/:clave", admin.actualizarPlantillaCorreo);
 
 // RF-A18: catálogos (tipo: universidades | carreras)
 router.get("/catalogos/:tipo", admin.listarCatalogo);
