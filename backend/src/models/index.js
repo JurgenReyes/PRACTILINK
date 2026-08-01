@@ -16,6 +16,7 @@ const CatalogoUniversidad = require("./CatalogoUniversidad");
 const CatalogoCarrera = require("./CatalogoCarrera");
 const Aviso = require("./Aviso");
 const Favorito = require("./Favorito");
+const PlantillaCorreo = require("./PlantillaCorreo");
 
 // --- Asociaciones ---
 Usuario.hasOne(Estudiante, { foreignKey: "id_usuario", onDelete: "CASCADE" });
@@ -64,5 +65,5 @@ Favorito.belongsTo(Vacante, { foreignKey: "id_vacante" });
 module.exports = {
   sequelize, Usuario, Estudiante, Empresa, Administrador, Vacante, Postulacion,
   Habilidad, Notificacion, Mensaje, Examen, ResultadoExamen, BitacoraAuditoria,
-  ConfiguracionIA, CatalogoUniversidad, CatalogoCarrera, Aviso, Favorito,
+  ConfiguracionIA, CatalogoUniversidad, CatalogoCarrera, Aviso, Favorito, PlantillaCorreo,
 };
