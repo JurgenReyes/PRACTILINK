@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import api from "../api/client";
+import CirculoProgreso from "../components/CirculoProgreso";
 import { useApi } from "../hooks/useApi";
 
 function Reloj({ minutos, onAgotado }) {
@@ -93,11 +94,16 @@ export default function Examenes() {
       <h2>Mis exámenes</h2>
 
       {resultado && (
-        <div className="card" style={{ marginBottom: 20, borderLeft: "4px solid var(--color-primary)" }}>
-          <h3 style={{ fontSize: 16 }}>Resultado obtenido: {resultado.puntaje_global}%</h3>
-          <p style={{ fontSize: 13 }}><strong>Fortalezas:</strong> {resultado.fortalezas}</p>
-          <p style={{ fontSize: 13 }}><strong>Áreas de mejora:</strong> {resultado.areas_mejora}</p>
-          <p style={{ fontSize: 13 }}><strong>Nivel de compatibilidad:</strong> {resultado.nivel_compatibilidad}</p>
+        <div className="card" style={{ marginBottom: 20, display: "flex", gap: 24, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 12.5, color: "var(--color-ink-soft)", marginBottom: 6 }}>Puntaje general</div>
+            <CirculoProgreso porcentaje={resultado.puntaje_global} tamano={110} />
+          </div>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <p style={{ fontSize: 13.5, margin: "4px 0" }}><strong>✅ Fortalezas:</strong> {resultado.fortalezas}</p>
+            <p style={{ fontSize: 13.5, margin: "4px 0" }}><strong>❌ Áreas de mejora:</strong> {resultado.areas_mejora}</p>
+            <p style={{ fontSize: 13.5, margin: "4px 0" }}><strong>Compatibilidad con la vacante:</strong> {resultado.nivel_compatibilidad}</p>
+          </div>
         </div>
       )}
 
