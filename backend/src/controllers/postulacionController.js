@@ -96,7 +96,10 @@ async function cambiarEstatus(req, res) {
     id_usuario: postulacion.Estudiante.id_usuario,
     tipo: "cambio_estatus",
     mensaje: `Tu postulación a "${postulacion.Vacante.titulo}" cambió a: ${ETIQUETAS[estatus]}.`,
-    asuntoCorreo: "Actualización de tu postulación en PractiLink",
+    plantilla: {
+      clave: "cambio_estatus_postulacion",
+      variables: { mensaje: `Tu postulación a "${postulacion.Vacante.titulo}" cambió a: ${ETIQUETAS[estatus]}.` },
+    },
   });
 
   // RF-E36: si pasa a evaluación pendiente y no existe ya un examen, se genera uno
