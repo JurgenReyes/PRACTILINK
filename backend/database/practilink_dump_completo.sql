@@ -580,3 +580,32 @@ UNLOCK TABLES;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
 -- Dump completed on 2026-07-07 17:18:08
+
+-- =========================================================
+-- Parche: columnas y tabla que faltaban en practilink_dump_completo.sql
+-- Pegar este contenido al FINAL de ese archivo.
+-- =========================================================
+
+ALTER TABLE estudiantes
+  ADD COLUMN cv_url VARCHAR(255) NULL,
+  ADD COLUMN cv_nombre_original VARCHAR(255) NULL,
+  ADD COLUMN experiencia_laboral JSON NULL;
+
+ALTER TABLE empresas
+  ADD COLUMN logo_url VARCHAR(255) NULL;
+
+ALTER TABLE postulaciones
+  ADD COLUMN enlace_videollamada VARCHAR(255) NULL;
+
+ALTER TABLE vacantes
+  ADD COLUMN reportada BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN motivo_reporte VARCHAR(255) NULL;
+
+CREATE TABLE IF NOT EXISTS plantillas_correo (
+  clave VARCHAR(60) PRIMARY KEY,
+  nombre VARCHAR(120) NOT NULL,
+  asunto VARCHAR(200) NOT NULL,
+  cuerpo TEXT NOT NULL,
+  fecha_creacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  fecha_modificacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);

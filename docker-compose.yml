@@ -17,6 +17,58 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - practilink_net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: practilink_backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      NODE_ENV: production
+      FRONTEND_URL: http://localhost:5173
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: practilink
+      DB_USER: root
+      DB_PASSWORD: ${DB_ROOT_PASSWORD:-Practilink2026!}
+      JWT_SECRET: ${JWT_SECRET:-cambia_este_valor_por_uno_seguro}
+      JWT_EXPIRES_IN: 8h
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-practilink-archivos}
+      SES_FROM_EMAIL: ${SES_FROM_EMAIL:-no-reply@practilink.com}
+      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-anthropic.claude-3-5-sonnet-20240620-v1:0}
+    ports:
+      - "4000:4000"
+    networks:
+      - practilink_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://localhost:4000/api
+    container_name: practilink_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+    networks:
+      - practilink_net
+
+networks:
+  practilink_net:
+    driver: bridge
 
 volumes:
   practilink_mysql_data:
