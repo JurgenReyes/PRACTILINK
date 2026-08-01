@@ -10,7 +10,12 @@ import RecuperarPassword from "./pages/RecuperarPassword";
 import RestablecerPassword from "./pages/RestablecerPassword";
 import VerificarCorreo from "./pages/VerificarCorreo";
 import Vacantes from "./pages/Vacantes";
+import VacanteDetalle from "./pages/VacanteDetalle";
+import DashboardEstudiante from "./pages/DashboardEstudiante";
 import PerfilEstudiante from "./pages/PerfilEstudiante";
+import Postulaciones from "./pages/Postulaciones";
+import PerfilEmpresa from "./pages/PerfilEmpresa";
+import Configuracion from "./pages/Configuracion";
 import Examenes from "./pages/Examenes";
 import Entrevistas from "./pages/Entrevistas";
 import DashboardEmpresa from "./pages/DashboardEmpresa";
@@ -31,9 +36,18 @@ export default function App() {
             <Route path="/restablecer" element={<RestablecerPassword />} />
             <Route path="/verificar" element={<VerificarCorreo />} />
             <Route path="/vacantes" element={<Vacantes />} />
+            <Route path="/vacantes/:id" element={<VacanteDetalle />} />
+            <Route
+              path="/estudiante/inicio"
+              element={<RutaProtegida rolesPermitidos={["estudiante"]}><DashboardEstudiante /></RutaProtegida>}
+            />
             <Route
               path="/estudiante"
               element={<RutaProtegida rolesPermitidos={["estudiante"]}><PerfilEstudiante /></RutaProtegida>}
+            />
+            <Route
+              path="/postulaciones"
+              element={<RutaProtegida rolesPermitidos={["estudiante"]}><Postulaciones /></RutaProtegida>}
             />
             <Route
               path="/examenes"
@@ -46,6 +60,14 @@ export default function App() {
             <Route
               path="/empresa"
               element={<RutaProtegida rolesPermitidos={["empresa"]}><DashboardEmpresa /></RutaProtegida>}
+            />
+            <Route
+              path="/empresa/perfil"
+              element={<RutaProtegida rolesPermitidos={["empresa"]}><PerfilEmpresa /></RutaProtegida>}
+            />
+            <Route
+              path="/configuracion"
+              element={<RutaProtegida rolesPermitidos={["estudiante", "empresa"]}><Configuracion /></RutaProtegida>}
             />
             <Route
               path="/admin"

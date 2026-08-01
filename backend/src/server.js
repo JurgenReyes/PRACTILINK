@@ -1,4 +1,5 @@
 require("dotenv").config();
+const path = require("path");
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -40,6 +41,14 @@ app.use(cors({
   },
 }));
 app.use(express.json({ limit: "1mb" }));
+
+// Fotos de perfil guardadas localmente (ver estudianteRoutes.js /foto). Se
+// sirven con Cross-Origin-Resource-Policy explícito porque el frontend corre
+// en otro puerto (Vite) y, sin este header, algunos navegadores bloquean la
+// carga de la imagen aunque CORS ya la permita para peticiones normales.
+app.use("/uploads", express.static(path.join(__dirname, "../uploads"), {
+  setHeaders: (res) => res.setHeader("Cross-Origin-Resource-Policy", "cross-origin"),
+}));
 
 // RF-E07 / protección general: limita intentos de login para mitigar fuerza bruta
 const limitadorLogin = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
