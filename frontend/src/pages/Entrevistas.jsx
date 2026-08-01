@@ -159,7 +159,7 @@ export default function Entrevistas() {
             )}
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
             {e.modalidad_entrevista === "videollamada" && (
               e.enlace_videollamada ? (
                 <a className="btn btn-primary" href={e.enlace_videollamada} target="_blank" rel="noreferrer">Unirse a videollamada</a>
