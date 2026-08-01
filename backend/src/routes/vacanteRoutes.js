@@ -8,5 +8,6 @@ router.get("/:id", vacantes.detalle);
 router.post("/", requiereAutenticacion, requiereRol("empresa"), vacantes.crear);
 router.put("/:id", requiereAutenticacion, requiereRol("empresa"), vacantes.actualizar);
 router.post("/:id/duplicar", requiereAutenticacion, requiereRol("empresa"), vacantes.duplicar);
+router.post("/:id/reportar", requiereAutenticacion, requiereRol("estudiante"), vacantes.reportar);
 
 module.exports = router;

@@ -16,6 +16,8 @@ const Vacante = sequelize.define("Vacante", {
   beneficios: { type: DataTypes.TEXT },
   estatus: { type: DataTypes.ENUM("borrador", "publicada", "pausada", "cerrada"), defaultValue: "borrador" },
   fecha_expiracion: { type: DataTypes.DATEONLY },
+  reportada: { type: DataTypes.BOOLEAN, defaultValue: false },
+  motivo_reporte: { type: DataTypes.STRING(255) },
 }, {
   tableName: "vacantes",
   createdAt: "fecha_creacion",

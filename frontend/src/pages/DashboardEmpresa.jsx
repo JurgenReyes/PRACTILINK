@@ -1,12 +1,18 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import api from "../api/client";
 import EstatusBadge from "../components/EstatusBadge";
+import BotonExportar from "../components/BotonExportar";
+import AvatarFoto from "../components/AvatarFoto";
 import Chat from "../components/Chat";
 import { useAuth } from "../context/AuthContext";
 import { useApi } from "../hooks/useApi";
 
 const VACIA = { titulo: "", area: "", modalidad: "remoto", ubicacion: "", carrera_solicitada: "", requisitos: "", duracion_meses: "", apoyo_economico: "" };
+
+// Las fotos de perfil se sirven desde el backend directo (fuera de /api).
+const BASE_ARCHIVOS = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api\/?$/, "");
 const COLORES = ["#2563EB", "#EF4444", "#F59E0B", "#8B5CF6", "#16A34A"];
 
 function Resumen() {
@@ -14,22 +20,40 @@ function Resumen() {
   if (cargando) return <p>Cargando estadísticas…</p>;
   if (error || !stats) return <div className="alert alert-error">{error || "No se pudieron cargar las estadísticas."}</div>;
 
-  const porVacante = Object.entries(stats.postulaciones_por_vacante).map(([titulo, total]) => ({ titulo, total }));
-  const porEstatus = Object.entries(stats.postulaciones_por_estatus).map(([estatus, total]) => ({ estatus, total }));
+  const tarjetas = [
+    ["Vacantes activas", stats.vacantes_activas],
+    ["Postulaciones totales", stats.total_postulaciones],
+    ["Entrevistas programadas", stats.entrevistas_programadas],
+  ];
 
   return (
     <div>
-      <div className="grid grid-2" style={{ marginBottom: 24 }}>
-        <div className="card" style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 28, fontWeight: 700, color: "var(--color-primary)" }}>{stats.vacantes_activas}</div>
-          <div style={{ fontSize: 13, color: "var(--color-ink-soft)" }}>Vacantes activas</div>
-        </div>
-        <div className="card" style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 28, fontWeight: 700, color: "var(--color-primary)" }}>{stats.total_postulaciones}</div>
-          <div style={{ fontSize: 13, color: "var(--color-ink-soft)" }}>Postulaciones totales</div>
-        </div>
+      <h4 style={{ marginTop: 0 }}>Estadísticas de Reclutamiento</h4>
+      <div className="grid grid-3">
+        {tarjetas.map(([label, valor]) => (
+          <div key={label} className="card" style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 28, fontWeight: 700, color: "var(--color-primary)" }}>{valor}</div>
+            <div style={{ fontSize: 13, color: "var(--color-ink-soft)" }}>{label}</div>
+          </div>
+        ))}
       </div>
-      <div className="grid grid-2">
+    </div>
+  );
+}
+
+function Reportes() {
+  const { datos: stats, cargando, error } = useApi("/empresa/dashboard");
+  if (cargando) return <p>Cargando estadísticas…</p>;
+  if (error || !stats) return <div className="alert alert-error">{error || "No se pudieron cargar las estadísticas."}</div>;
+
+  const porVacante = Object.entries(stats.postulaciones_por_vacante).map(([titulo, total]) => ({ titulo, total }));
+  const porEstatus = Object.entries(stats.postulaciones_por_estatus).map(([estatus, total]) => ({ estatus, total }));
+  const vacantesPopulares = [...porVacante].sort((a, b) => b.total - a.total).slice(0, 5);
+
+  return (
+    <div>
+      <h4 style={{ marginTop: 0 }}>Gráficas de Postulaciones</h4>
+      <div className="grid grid-2" style={{ marginBottom: 20 }}>
         <div className="card">
           <h3 style={{ fontSize: 15 }}>Postulaciones por vacante</h3>
           <ResponsiveContainer width="100%" height={260}>
@@ -53,7 +77,60 @@ function Resumen() {
           </ResponsiveContainer>
         </div>
       </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h3 style={{ fontSize: 15, marginTop: 0 }}>Vacantes más populares</h3>
+        {vacantesPopulares.length === 0 ? (
+          <p style={{ fontSize: 13.5, color: "var(--color-ink-soft)" }}>Aún no hay postulaciones registradas.</p>
+        ) : (
+          vacantesPopulares.map((v) => (
+            <p key={v.titulo} style={{ margin: "4px 0", fontSize: 14 }}>· {v.titulo} — {v.total} postulaciones</p>
+          ))
+        )}
+      </div>
+
+      <div className="card">
+        <h3 style={{ fontSize: 15, marginTop: 0 }}>Rendimiento de reclutamiento</h3>
+        <p style={{ fontSize: 14, margin: "4px 0" }}>
+          Tasa de aceptación: <strong>
+            {stats.total_postulaciones ? Math.round(((stats.postulaciones_por_estatus.aceptado || 0) / stats.total_postulaciones) * 100) : 0}%
+          </strong>
+        </p>
+        <p style={{ fontSize: 14, margin: "4px 0" }}>
+          Vacantes activas vs. cerradas: <strong>{stats.vacantes_activas} activas / {stats.vacantes_cerradas} cerradas</strong>
+        </p>
+      </div>
     </div>
+  );
+}
+
+function EntrevistasEmpresa() {
+  const { datos: entrevistas, cargando, error } = useApi("/empresa/entrevistas");
+  if (cargando) return <p>Cargando entrevistas…</p>;
+  if (error) return <div className="alert alert-error">{error}</div>;
+  if (!entrevistas || entrevistas.length === 0) return <div className="empty-state">No tienes entrevistas programadas.</div>;
+
+  return (
+    <table>
+      <thead>
+        <tr><th>Candidato</th><th>Vacante</th><th>Fecha</th><th>Hora</th><th>Modalidad</th><th>Confirmada</th></tr>
+      </thead>
+      <tbody>
+        {entrevistas.map((e) => {
+          const fecha = new Date(e.fecha_entrevista);
+          return (
+            <tr key={e.id_postulacion}>
+              <td>{e.Estudiante?.nombre_completo}</td>
+              <td>{e.Vacante?.titulo}</td>
+              <td>{fecha.toLocaleDateString("es-MX")}</td>
+              <td>{fecha.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}</td>
+              <td>{e.modalidad_entrevista === "videollamada" ? "Videollamada" : "Presencial"}</td>
+              <td>{e.entrevista_confirmada ? "✅ Sí" : "⏳ Pendiente"}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
@@ -141,7 +218,7 @@ function MisVacantes() {
             <label>Requisitos y descripción</label>
             <textarea rows={4} value={form.requisitos} onChange={(e) => setForm({ ...form, requisitos: e.target.value })} />
           </div>
-          <div style={{ display: "flex", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button className="btn btn-outline" onClick={(e) => crearVacante(e, "borrador")}>Guardar borrador</button>
             <button className="btn btn-primary" onClick={(e) => crearVacante(e, "publicada")}>Publicar vacante</button>
           </div>
@@ -161,7 +238,7 @@ function MisVacantes() {
               <tr key={v.id_vacante}>
                 <td>{v.titulo}</td><td>{v.modalidad}</td>
                 <td><EstatusBadge estatus={v.estatus} /></td>
-                <td style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <td style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                   {v.estatus === "publicada" && <button className="btn btn-outline" onClick={() => cambiarEstatusVacante(v.id_vacante, "pausada")}>Pausar</button>}
                   {v.estatus === "pausada" && <button className="btn btn-outline" onClick={() => cambiarEstatusVacante(v.id_vacante, "publicada")}>Reactivar</button>}
                   {v.estatus === "borrador" && <button className="btn btn-primary" onClick={() => cambiarEstatusVacante(v.id_vacante, "publicada")}>Publicar</button>}
@@ -185,6 +262,7 @@ function Candidatos({ idUsuario }) {
   const [error, setError] = useState("");
   const [chatAbierto, setChatAbierto] = useState(null);
   const [entrevista, setEntrevista] = useState(null); // id_postulacion en edición
+  const [seleccionado, setSeleccionado] = useState(null); // id_postulacion en vista de ficha completa
 
   const { datos: candidatos, cargando, error: errorCarga, recargar: cargarCandidatos } =
     useApi(idVacante ? `/empresa/vacantes/${idVacante}/candidatos` : null, filtrosAplicados);
@@ -195,6 +273,7 @@ function Candidatos({ idUsuario }) {
 
   function seleccionarVacante(id) {
     setIdVacante(id);
+    setSeleccionado(null);
     aplicarFiltros();
   }
 
@@ -256,9 +335,13 @@ function Candidatos({ idUsuario }) {
           </div>
         </div>
         <button className="btn btn-primary" onClick={aplicarFiltros}>Aplicar filtros</button>
-        {idVacante && <a className="btn btn-outline" style={{ marginLeft: 10 }}
-          href={`${import.meta.env.VITE_API_URL || "http://localhost:4000/api"}/empresa/reportes/candidatos.csv`}
-          target="_blank" rel="noreferrer">Exportar CSV</a>}
+        {idVacante && (
+          <span style={{ marginLeft: 10 }}>
+            <BotonExportar ruta="/empresa/reportes/candidatos.csv" nombreArchivo="candidatos_practilink.csv">
+              Exportar CSV
+            </BotonExportar>
+          </span>
+        )}
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -270,12 +353,46 @@ function Candidatos({ idUsuario }) {
         <p>Cargando candidatos…</p>
       ) : !candidatos || candidatos.length === 0 ? (
         <div className="empty-state">Aún no hay postulaciones para esta vacante.</div>
-      ) : (
-        candidatos.map((c) => (
-          <div key={c.id_postulacion} className="card" style={{ marginBottom: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+      ) : (() => {
+        const candidato = candidatos.find((c) => c.id_postulacion === seleccionado);
+
+        // ---- Vista de tarjetas (Lista de Candidatos) ----
+        if (!candidato) {
+          return (
+            <div className="grid grid-3">
+              {candidatos.map((c) => (
+                <div key={c.id_postulacion} className="card" style={{ textAlign: "center" }}>
+                  <div style={{ margin: "0 auto 10px", display: "flex", justifyContent: "center" }}>
+                    <AvatarFoto
+                      src={c.Estudiante?.foto_url ? `${BASE_ARCHIVOS}${c.Estudiante.foto_url}` : null}
+                      nombre={c.Estudiante?.nombre_completo}
+                      tamano={46}
+                    />
+                  </div>
+                  <strong style={{ fontSize: 15 }}>{c.Estudiante?.nombre_completo}</strong>
+                  <div style={{ fontSize: 13, color: "var(--color-ink-soft)" }}>{c.Estudiante?.carrera}</div>
+                  <div style={{ fontSize: 13, color: "var(--color-ink-soft)", marginBottom: 8 }}>{c.Estudiante?.universidad}</div>
+                  <p style={{ fontSize: 12.5, margin: "2px 0" }}>
+                    Puntaje IA: <strong>{c.Examen?.ResultadoExamen?.puntaje_global != null ? `${c.Examen.ResultadoExamen.puntaje_global}%` : "—"}</strong>
+                  </p>
+                  <p style={{ fontSize: 12.5, margin: "2px 0 10px" }}>Coincidencia con vacante: <strong>{c.matching_score}%</strong></p>
+                  <button className="btn btn-primary btn-block" onClick={() => setSeleccionado(c.id_postulacion)}>Ver Perfil</button>
+                </div>
+              ))}
+            </div>
+          );
+        }
+
+        // ---- Ficha de detalle (Perfil del Candidato) ----
+        const c = candidato;
+        return (
+          <div className="card">
+            <button className="btn btn-outline" style={{ marginBottom: 16 }} onClick={() => setSeleccionado(null)}>← Volver a candidatos</button>
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
               <div>
-                <strong>{c.Estudiante?.nombre_completo}</strong> — {c.Estudiante?.universidad} · {c.Estudiante?.carrera}
+                <h3 style={{ margin: "0 0 4px" }}>{c.Estudiante?.nombre_completo}</h3>
+                <div style={{ fontSize: 13, color: "var(--color-ink-soft)" }}>{c.Estudiante?.universidad} · {c.Estudiante?.carrera}</div>
                 <div style={{ fontSize: 13, color: "var(--color-ink-soft)" }}>Matching: {c.matching_score}%</div>
               </div>
               <EstatusBadge estatus={c.estatus} />
@@ -332,10 +449,12 @@ function Candidatos({ idUsuario }) {
               <textarea rows={2} defaultValue={c.notas_internas || ""} onBlur={(e) => guardarNota(c.id_postulacion, e.target.value)} />
             </div>
 
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <button className="btn btn-outline" onClick={() => setEntrevista(entrevista === c.id_postulacion ? null : c.id_postulacion)}>
-                Programar entrevista
+                Agendar entrevista
               </button>
+              <button className="btn btn-accent" onClick={() => cambiarEstatus(c.id_postulacion, "aceptado")}>Aceptar candidato</button>
+              <button className="btn btn-outline" onClick={() => cambiarEstatus(c.id_postulacion, "rechazado")}>Rechazar candidato</button>
               <button className="btn btn-outline" onClick={() => setChatAbierto(chatAbierto === c.id_postulacion ? null : c.id_postulacion)}>
                 {chatAbierto === c.id_postulacion ? "Cerrar chat" : "Chat"}
               </button>
@@ -360,8 +479,8 @@ function Candidatos({ idUsuario }) {
               <div style={{ marginTop: 12 }}><Chat idPostulacion={c.id_postulacion} miIdUsuario={idUsuario} /></div>
             )}
           </div>
-        ))
-      )}
+        );
+      })()}
     </div>
   );
 }
@@ -370,6 +489,8 @@ const PESTANAS_EMPRESA = [
   ["resumen", "📊 Dashboard"],
   ["vacantes", "💼 Vacantes"],
   ["candidatos", "🧑‍🤝‍🧑 Candidatos"],
+  ["entrevistas", "🗓️ Entrevistas"],
+  ["reportes", "📈 Reportes"],
 ];
 
 export default function DashboardEmpresa() {
@@ -377,8 +498,9 @@ export default function DashboardEmpresa() {
   const [tab, setTab] = useState("resumen");
 
   return (
-    <div style={{ display: "flex", flex: 1, minHeight: "60vh" }}>
+    <div className="body-wrap" style={{ minHeight: "60vh" }}>
       <aside className="sidebar">
+        <Link to="/empresa/perfil" className="side-item">🏢 Mi empresa</Link>
         {PESTANAS_EMPRESA.map(([key, label]) => (
           <button
             key={key}
@@ -388,12 +510,15 @@ export default function DashboardEmpresa() {
             {label}
           </button>
         ))}
+        <Link to="/configuracion" className="side-item">⚙️ Configuración</Link>
       </aside>
       <div className="container" style={{ flex: 1 }}>
         <h2>Dashboard Empresa</h2>
         {tab === "resumen" && <Resumen />}
         {tab === "vacantes" && <MisVacantes />}
         {tab === "candidatos" && <Candidatos idUsuario={idUsuario} />}
+        {tab === "entrevistas" && <EntrevistasEmpresa />}
+        {tab === "reportes" && <Reportes />}
       </div>
     </div>
   );

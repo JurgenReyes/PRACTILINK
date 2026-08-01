@@ -20,7 +20,7 @@ export default function Navbar() {
         <Link to="/vacantes">Vacantes</Link>
         {rol === "estudiante" && <Link to="/estudiante">Mi perfil</Link>}
         {rol === "estudiante" && <Link to="/examenes">Exámenes</Link>}
-        {rol === "empresa" && <Link to="/empresa">Mi empresa</Link>}
+        {rol === "empresa" && <Link to="/empresa/perfil">Mi empresa</Link>}
         {rol === "administrador" && <Link to="/admin">Administración</Link>}
         {rol && <Notificaciones />}
         {!rol && <Link to="/login">Iniciar sesión</Link>}

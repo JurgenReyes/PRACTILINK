@@ -202,9 +202,26 @@ a { color: var(--color-primary); text-decoration: none; }
   display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 17px; flex-shrink: 0;
 }
 
-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-th { text-align: left; color: var(--color-ink-soft); font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; padding: 10px 12px; border-bottom: 1px solid var(--color-border); }
-td { padding: 12px; border-bottom: 1px solid var(--color-border); }
+/* Casillas del código de verificación (2FA) — ancho flexible en vez de fijo,
+   para que las 6 quepan en pantallas angostas sin desbordarse. */
+.otp-box {
+  width: 100%; max-width: 44px; height: 52px; text-align: center; font-size: 22px; font-weight: 700; padding: 0;
+  flex: 1 1 0;
+}
+
+table {
+  width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px;
+  background: #fff; border: 1px solid var(--color-border); border-radius: var(--radius);
+  box-shadow: var(--shadow); overflow: hidden;
+}
+thead { background: #F9FAFB; }
+th {
+  text-align: left; color: var(--color-ink-soft); font-size: 11.5px; text-transform: uppercase;
+  letter-spacing: 0.04em; padding: 12px 14px; border-bottom: 1px solid var(--color-border);
+}
+td { padding: 12px 14px; border-bottom: 1px solid var(--color-border); vertical-align: middle; }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: #FAFBFC; }
 
 /* =========================================================
    Diseño responsivo

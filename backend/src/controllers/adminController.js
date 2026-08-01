@@ -4,13 +4,19 @@ const crypto = require("crypto");
 const {
   Usuario, Estudiante, Empresa, Administrador, Vacante, Postulacion, Examen,
   ResultadoExamen, BitacoraAuditoria, ConfiguracionIA, CatalogoUniversidad, CatalogoCarrera, Aviso,
+  PlantillaCorreo,
 } = require("../models");
 const { enviarCorreo } = require("../services/aws/ses");
 const { registrarAuditoria } = require("../services/auditoria");
+const { generarPDF, dibujarTabla } = require("../services/pdf");
+const { enviarCSV } = require("../services/csv");
+const { renderizarPlantilla, PLANTILLAS_POR_DEFECTO } = require("../services/plantillasCorreo");
+
+const AZUL_PDF = "#2563EB";
 
 // ---------- RF-A01/RF-A02: usuarios ----------
 async function listarUsuarios(req, res) {
-  const { estatus, tipo, desde } = req.query;
+  const { estatus, tipo, desde, q } = req.query;
   const where = {};
   if (estatus) where.estatus = estatus;
   if (tipo) where.rol = tipo;
@@ -22,7 +28,19 @@ async function listarUsuarios(req, res) {
     order: [["fecha_creacion", "DESC"]],
     attributes: { exclude: ["password_hash"] },
   });
-  return res.json(usuarios);
+
+  // El nombre vive en Estudiante/Empresa, no en Usuario — si se busca por
+  // nombre, se filtra aquí después de traer los datos (Sequelize no puede
+  // buscar cómodamente en dos tablas asociadas con un solo OR de forma limpia).
+  const filtrados = q
+    ? usuarios.filter((u) =>
+        u.correo.toLowerCase().includes(q.toLowerCase()) ||
+        u.Estudiante?.nombre_completo?.toLowerCase().includes(q.toLowerCase()) ||
+        u.Empresa?.nombre_empresa?.toLowerCase().includes(q.toLowerCase())
+      )
+    : usuarios;
+
+  return res.json(filtrados);
 }
 
 async function detalleUsuario(req, res) {
@@ -77,11 +95,18 @@ async function restablecerPasswordUsuario(req, res) {
 
 // ---------- RF-A06/RF-A07: validación de empresas ----------
 async function empresasPendientes(req, res) {
-  const empresas = await Empresa.findAll({
-    where: { estatus_validacion: "pendiente" },
-    include: [{ model: Usuario, attributes: ["correo"] }],
+  const [pendientes, totalAprobadas, totalRechazadas] = await Promise.all([
+    Empresa.findAll({
+      where: { estatus_validacion: "pendiente" },
+      include: [{ model: Usuario, attributes: ["correo"] }],
+    }),
+    Empresa.count({ where: { estatus_validacion: "aprobada" } }),
+    Empresa.count({ where: { estatus_validacion: "rechazada" } }),
+  ]);
+  return res.json({
+    pendientes,
+    conteos: { pendientes: pendientes.length, aprobadas: totalAprobadas, rechazadas: totalRechazadas },
   });
-  return res.json(empresas);
 }
 
 async function validarEmpresa(req, res) {
@@ -94,11 +119,11 @@ async function validarEmpresa(req, res) {
   empresa.motivo_rechazo = aprobar ? null : motivo;
   await empresa.save();
 
-  await enviarCorreo({
-    para: empresa.Usuario.correo,
-    asunto: aprobar ? "Tu cuenta empresarial fue aprobada" : "Tu cuenta empresarial fue rechazada",
-    texto: aprobar ? "Ya puedes publicar vacantes en PractiLink." : `Motivo: ${motivo}`,
+  const { asunto, texto } = await renderizarPlantilla("validacion_empresa", {
+    asunto_validacion: aprobar ? "Tu cuenta empresarial fue aprobada" : "Tu cuenta empresarial fue rechazada",
+    mensaje: aprobar ? "Ya puedes publicar vacantes en PractiLink." : `Motivo: ${motivo}`,
   });
+  await enviarCorreo({ para: empresa.Usuario.correo, asunto, texto });
   await registrarAuditoria(req, `Validación de empresa #${empresa.id_empresa}: ${aprobar ? "aprobada" : "rechazada"}`, motivo);
   return res.json(empresa);
 }
@@ -115,8 +140,11 @@ async function verBitacora(req, res) {
 
 // ---------- RF-A09/RF-A10/RF-A11: moderación de vacantes ----------
 async function todasLasVacantes(req, res) {
-  const { estatus } = req.query;
-  const where = estatus ? { estatus } : {};
+  const { estatus, reportadas, q } = req.query;
+  const where = {};
+  if (estatus) where.estatus = estatus;
+  if (reportadas === "1") where.reportada = true;
+  if (q) where[Op.or] = [{ titulo: { [Op.like]: `%${q}%` } }];
   const vacantes = await Vacante.findAll({ where, include: [Empresa], order: [["fecha_creacion", "DESC"]] });
   return res.json(vacantes);
 }
@@ -127,6 +155,8 @@ async function darDeBajaVacante(req, res) {
   if (!vacante) return res.status(404).json({ error: "Vacante no encontrada" });
 
   vacante.estatus = "cerrada";
+  vacante.reportada = false;
+  vacante.motivo_reporte = null;
   await vacante.save();
 
   await enviarCorreo({
@@ -135,6 +165,18 @@ async function darDeBajaVacante(req, res) {
     texto: `La vacante "${vacante.titulo}" fue dada de baja. Motivo: ${motivo}`,
   });
   await registrarAuditoria(req, `Vacante #${vacante.id_vacante} dada de baja`, motivo);
+  return res.json(vacante);
+}
+
+// El reporte de un estudiante puede resultar infundado: el admin lo puede
+// descartar sin dar de baja la vacante.
+async function descartarReporteVacante(req, res) {
+  const vacante = await Vacante.findByPk(req.params.id);
+  if (!vacante) return res.status(404).json({ error: "Vacante no encontrada" });
+  vacante.reportada = false;
+  vacante.motivo_reporte = null;
+  await vacante.save();
+  await registrarAuditoria(req, `Reporte descartado para la vacante #${vacante.id_vacante}`);
   return res.json(vacante);
 }
 
@@ -165,7 +207,7 @@ async function historialExamenes(req, res) {
 }
 
 // ---------- RF-A15/RF-A17: dashboard global y métricas ----------
-async function dashboardGlobal(req, res) {
+async function calcularStatsGlobales() {
   const [usuariosActivos, empresasValidadas, vacantesActivas, postulacionesTotales, aceptados] = await Promise.all([
     Usuario.count({ where: { estatus: "activo" } }),
     Empresa.count({ where: { estatus_validacion: "aprobada" } }),
@@ -181,7 +223,48 @@ async function dashboardGlobal(req, res) {
     group: ["estatus"],
   });
 
-  return res.json({
+  // Usuarios nuevos por semana (últimas 8 semanas) — para la gráfica de línea.
+  const usuariosRecientes = await Usuario.findAll({
+    attributes: ["fecha_creacion"],
+    where: { fecha_creacion: { [Op.gte]: new Date(Date.now() - 8 * 7 * 24 * 60 * 60 * 1000) } },
+  });
+  const semanas = {};
+  for (const u of usuariosRecientes) {
+    const d = new Date(u.fecha_creacion);
+    const inicioSemana = new Date(d);
+    inicioSemana.setDate(d.getDate() - d.getDay());
+    const clave = inicioSemana.toISOString().slice(0, 10);
+    semanas[clave] = (semanas[clave] || 0) + 1;
+  }
+  const usuariosNuevosPorSemana = Object.entries(semanas)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([semana, total]) => ({ semana, total }));
+
+  // Vacantes con mayor demanda (top 5 por número de postulaciones).
+  const vacantesConMayorDemanda = await Postulacion.findAll({
+    attributes: ["id_vacante", [Postulacion.sequelize.fn("COUNT", "*"), "total"]],
+    group: ["id_vacante"],
+    order: [[Postulacion.sequelize.fn("COUNT", "*"), "DESC"]],
+    limit: 5,
+    include: [{ model: Vacante, attributes: ["titulo"] }],
+  });
+
+  // Tiempo promedio de respuesta: días entre la postulación y el último
+  // cambio de estatus, para postulaciones que ya salieron de "en revisión".
+  const respondidas = await Postulacion.findAll({
+    where: { estatus: { [Op.ne]: "en_revision" } },
+    attributes: ["fecha_postulacion", "fecha_modificacion"],
+  });
+  const tiempoPromedioRespuestaDias = respondidas.length
+    ? Math.round(
+        (respondidas.reduce((sum, p) => sum + (new Date(p.fecha_modificacion) - new Date(p.fecha_postulacion)), 0) /
+          respondidas.length /
+          (1000 * 60 * 60 * 24)) *
+          10
+      ) / 10
+    : 0;
+
+  return {
     usuarios_activos: usuariosActivos,
     empresas_validadas: empresasValidadas,
     vacantes_activas: vacantesActivas,
@@ -190,20 +273,131 @@ async function dashboardGlobal(req, res) {
     postulaciones_por_estatus: Object.fromEntries(
       postulacionesPorEstatus.map((p) => [p.estatus, Number(p.get("total"))])
     ),
-  });
+    usuarios_nuevos_por_semana: usuariosNuevosPorSemana,
+    vacantes_mayor_demanda: vacantesConMayorDemanda.map((v) => ({
+      titulo: v.Vacante?.titulo || "(vacante eliminada)",
+      postulantes: Number(v.get("total")),
+    })),
+    tiempo_promedio_respuesta_dias: tiempoPromedioRespuestaDias,
+  };
 }
 
-// ---------- RF-A16: reportes exportables ----------
+async function dashboardGlobal(req, res) {
+  return res.json(await calcularStatsGlobales());
+}
+
+// ---------- Plantillas de correo automático ----------
+async function listarPlantillasCorreo(req, res) {
+  const guardadas = await PlantillaCorreo.findAll();
+  const porClave = Object.fromEntries(guardadas.map((p) => [p.clave, p]));
+
+  // Se listan siempre las 4 claves conocidas, tomando lo guardado si existe
+  // o el valor por defecto si el admin nunca la ha tocado — así la pantalla
+  // de Configuración siempre muestra algo editable, nunca queda vacía.
+  const resultado = Object.entries(PLANTILLAS_POR_DEFECTO).map(([clave, porDefecto]) => {
+    const guardada = porClave[clave];
+    return {
+      clave,
+      nombre: porDefecto.nombre,
+      asunto: guardada?.asunto ?? porDefecto.asunto,
+      cuerpo: guardada?.cuerpo ?? porDefecto.cuerpo,
+      personalizada: Boolean(guardada),
+    };
+  });
+  return res.json(resultado);
+}
+
+async function actualizarPlantillaCorreo(req, res) {
+  const { clave } = req.params;
+  const { asunto, cuerpo } = req.body;
+  if (!PLANTILLAS_POR_DEFECTO[clave]) return res.status(404).json({ error: "Plantilla desconocida" });
+  if (!asunto?.trim() || !cuerpo?.trim()) return res.status(400).json({ error: "Asunto y cuerpo son obligatorios" });
+
+  const [plantilla] = await PlantillaCorreo.upsert({
+    clave, nombre: PLANTILLAS_POR_DEFECTO[clave].nombre, asunto, cuerpo,
+  });
+  await registrarAuditoria(req, `Plantilla de correo actualizada: ${clave}`);
+  return res.json(plantilla);
+}
 async function exportarUsuariosCSV(req, res) {
   const usuarios = await Usuario.findAll({ include: [Estudiante, Empresa], attributes: { exclude: ["password_hash"] } });
   const filas = [["ID", "Correo", "Rol", "Estatus", "Verificado", "Fecha registro"]];
   for (const u of usuarios) {
     filas.push([u.id_usuario, u.correo, u.rol, u.estatus, u.correo_verificado ? "sí" : "no", u.fecha_creacion.toISOString()]);
   }
-  const csv = filas.map((f) => f.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
-  res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition", "attachment; filename=usuarios_practilink.csv");
-  return res.send(csv);
+  return enviarCSV(res, { filas, nombreArchivo: "usuarios_practilink.csv" });
+}
+
+async function exportarDashboardPDF(req, res) {
+  const stats = await calcularStatsGlobales();
+  generarPDF(res, {
+    titulo: "Dashboard Global",
+    nombreArchivo: "dashboard_practilink.pdf",
+    dibujar(doc) {
+      const tarjetas = [
+        ["Usuarios activos", stats.usuarios_activos],
+        ["Empresas validadas", stats.empresas_validadas],
+        ["Vacantes activas", stats.vacantes_activas],
+        ["Postulaciones totales", stats.postulaciones_totales],
+        ["Tasa de colocación", `${stats.tasa_colocacion}%`],
+      ];
+      let x = 40;
+      tarjetas.forEach(([label, valor]) => {
+        doc.roundedRect(x, doc.y, 95, 55, 6).strokeColor("#E5E7EB").stroke();
+        doc.font("Helvetica-Bold").fontSize(16).fillColor(AZUL_PDF).text(String(valor), x, doc.y + 10, { width: 95, align: "center" });
+        doc.font("Helvetica").fontSize(7.5).fillColor("#6B7280").text(label, x, doc.y + 30 - 12, { width: 95, align: "center" });
+        x += 103;
+      });
+      doc.moveDown(4);
+      doc.y += 20;
+
+      doc.font("Helvetica-Bold").fontSize(12).fillColor("#1F2937").text("Vacantes con mayor demanda");
+      doc.moveDown(0.3);
+      dibujarTabla(doc, {
+        columnas: ["Vacante", "Postulantes"],
+        filas: stats.vacantes_mayor_demanda.map((v) => [v.titulo, v.postulantes]),
+      });
+
+      doc.moveDown(1.5);
+      doc.font("Helvetica-Bold").fontSize(12).fillColor("#1F2937").text("Tiempo promedio de respuesta de empresas");
+      doc.font("Helvetica").fontSize(10).fillColor("#1F2937").text(`${stats.tiempo_promedio_respuesta_dias} días en promedio`);
+    },
+  });
+}
+
+async function exportarBitacoraCSV(req, res) {
+  const registros = await BitacoraAuditoria.findAll({
+    include: [Administrador],
+    order: [["fecha_creacion", "DESC"]],
+  });
+  const filas = [["Fecha", "Administrador", "Acción", "Detalle"]];
+  for (const r of registros) {
+    filas.push([r.fecha_creacion.toISOString(), r.Administrador?.nombre_completo || "—", r.accion, r.detalle || ""]);
+  }
+  return enviarCSV(res, { filas, nombreArchivo: "bitacora_practilink.csv" });
+}
+
+async function exportarBitacoraPDF(req, res) {
+  const registros = await BitacoraAuditoria.findAll({
+    include: [Administrador],
+    order: [["fecha_creacion", "DESC"]],
+    limit: 200, // suficiente para un reporte legible; la bitácora completa se sigue viendo en pantalla
+  });
+  generarPDF(res, {
+    titulo: "Bitácora de Auditoría",
+    nombreArchivo: "bitacora_practilink.pdf",
+    dibujar(doc) {
+      dibujarTabla(doc, {
+        columnas: ["Fecha", "Administrador", "Acción", "Detalle"],
+        filas: registros.map((r) => [
+          new Date(r.fecha_creacion).toLocaleString("es-MX"),
+          r.Administrador?.nombre_completo || "—",
+          r.accion,
+          r.detalle || "—",
+        ]),
+      });
+    },
+  });
 }
 
 // ---------- RF-A18: catálogos ----------
@@ -226,6 +420,14 @@ async function eliminarCatalogo(req, res) {
 
 // ---------- RF-A20: gestión de subadministradores ----------
 async function crearAdministrador(req, res) {
+  // Solo un superadministrador puede dar de alta otras cuentas de admin
+  // (incluyendo otros superadministradores) — evita que un admin de
+  // soporte/moderador se autoasigne más permisos de los que tiene.
+  const quienSolicita = await Administrador.findOne({ where: { id_usuario: req.usuario.id_usuario } });
+  if (!quienSolicita || quienSolicita.nivel_permiso !== "superadministrador") {
+    return res.status(403).json({ error: "Solo un superadministrador puede crear cuentas de administrador." });
+  }
+
   const { correo, password, nombre_completo, nivel_permiso } = req.body;
   const password_hash = await bcrypt.hash(password, 10);
   const usuario = await Usuario.create({ correo, password_hash, rol: "administrador", correo_verificado: true });
@@ -255,8 +457,10 @@ module.exports = {
   empresasPendientes, validarEmpresa, verBitacora,
   todasLasVacantes, darDeBajaVacante,
   verConfiguracionIA, actualizarConfiguracionIA, historialExamenes,
-  dashboardGlobal, exportarUsuariosCSV,
+  dashboardGlobal, exportarUsuariosCSV, exportarDashboardPDF, exportarBitacoraCSV, exportarBitacoraPDF,
   listarCatalogo, agregarCatalogo, eliminarCatalogo,
   crearAdministrador, listarAdministradores,
   crearAviso, listarAvisos,
+  descartarReporteVacante,
+  listarPlantillasCorreo, actualizarPlantillaCorreo,
 };

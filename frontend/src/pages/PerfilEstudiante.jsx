@@ -1,14 +1,10 @@
 import { useState } from "react";
 import api from "../api/client";
-import EstatusBadge from "../components/EstatusBadge";
-import Chat from "../components/Chat";
-import { useAuth } from "../context/AuthContext";
+import AvatarFoto from "../components/AvatarFoto";
 import { useApi } from "../hooks/useApi";
 
 export default function PerfilEstudiante() {
-  const { idUsuario } = useAuth();
   const { datos: perfil, setDatos: setPerfil, cargando: cargandoPerfil, error: errorPerfil } = useApi("/estudiantes/perfil");
-  const { datos: postulaciones, cargando: cargandoPost, error: errorPost } = useApi("/postulaciones/mias");
   const { datos: habilidades, cargando: cargandoHabilidades, recargar: recargarHabilidades } = useApi("/estudiantes/habilidades");
   const [nuevaHabilidad, setNuevaHabilidad] = useState({ nombre: "", tipo: "tecnica", nivel: "" });
   const [errorHabilidad, setErrorHabilidad] = useState("");
@@ -18,7 +14,31 @@ export default function PerfilEstudiante() {
   const [mensaje, setMensaje] = useState("");
   const [error, setError] = useState("");
   const [perfilExtraido, setPerfilExtraido] = useState(null);
-  const [chatAbierto, setChatAbierto] = useState(null);
+  const [subiendoFoto, setSubiendoFoto] = useState(false);
+
+  // Las fotos se sirven desde el backend directo (fuera de /api), a diferencia
+  // de las demás peticiones que sí pasan por api/client.js.
+  const BASE_ARCHIVOS = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api\/?$/, "");
+
+  async function subirFoto(e) {
+    const archivoFoto = e.target.files[0];
+    if (!archivoFoto) return;
+    setSubiendoFoto(true); setError(""); setMensaje("");
+    try {
+      const formData = new FormData();
+      formData.append("foto", archivoFoto);
+      const { data } = await api.post("/estudiantes/foto", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setPerfil(data);
+      setMensaje("Foto de perfil actualizada.");
+    } catch (err) {
+      setError(err.response?.data?.error || "No se pudo subir la foto");
+    } finally {
+      setSubiendoFoto(false);
+      e.target.value = ""; // permite volver a seleccionar el mismo archivo si hace falta
+    }
+  }
 
   async function guardarPerfil(e) {
     e.preventDefault();
@@ -42,6 +62,7 @@ export default function PerfilEstudiante() {
       const { data } = await api.post("/estudiantes/cv", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
+      setPerfil((p) => ({ ...p, cv_url: data.cv_url, cv_nombre_original: data.cv_nombre_original }));
       setPerfilExtraido(data.perfil_extraido);
       setMensaje("CV analizado. Revisa y confirma los datos extraídos abajo.");
     } catch (err) {
@@ -104,9 +125,21 @@ export default function PerfilEstudiante() {
     <div className="container">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-          <div className="avatar-circle">
-            {(perfil.nombre_completo || "?").split(" ").slice(0, 2).map((s) => s[0]).join("").toUpperCase()}
-          </div>
+          <label style={{ position: "relative", cursor: "pointer" }} title="Cambiar foto de perfil">
+            <AvatarFoto
+              src={perfil.foto_url ? `${BASE_ARCHIVOS}${perfil.foto_url}` : null}
+              nombre={perfil.nombre_completo}
+              tamano={110}
+            />
+            <span style={{
+              position: "absolute", bottom: 2, right: 2, background: "var(--color-primary)", color: "#fff",
+              width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 16, border: "3px solid #fff",
+            }}>
+              {subiendoFoto ? "…" : "✎"}
+            </span>
+            <input type="file" accept="image/jpeg,image/png,image/webp" onChange={subirFoto} disabled={subiendoFoto} style={{ display: "none" }} />
+          </label>
           <div>
             <h2 style={{ margin: 0 }}>{perfil.nombre_completo || "Mi perfil"}</h2>
             <span style={{ fontSize: 13, color: "var(--color-ink-soft)" }}>{perfil.universidad}</span>
@@ -153,6 +186,17 @@ export default function PerfilEstudiante() {
 
         <div className="card">
           <h3 style={{ fontSize: 16 }}>Cargar CV (PDF, máx. 10 MB)</h3>
+
+          {perfil.cv_url && (
+            <div style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
+              padding: "10px 12px", background: "var(--color-bg)", borderRadius: 8, marginBottom: 14, fontSize: 13.5,
+            }}>
+              <span>📄 {perfil.cv_nombre_original || "Mi CV"}</span>
+              <a className="btn btn-outline" href={`${BASE_ARCHIVOS}${perfil.cv_url}`} target="_blank" rel="noreferrer">Ver</a>
+            </div>
+          )}
+
           <form onSubmit={subirCV}>
             <div className="form-field">
               <input type="file" accept="application/pdf" onChange={(e) => setArchivo(e.target.files[0])} />
@@ -247,42 +291,6 @@ export default function PerfilEstudiante() {
           ))
         )}
       </div>
-
-      <h3 id="postulaciones" style={{ marginTop: 32, scrollMarginTop: 90 }}>Mis postulaciones</h3>
-      {errorPost && <div className="alert alert-error">{errorPost}</div>}
-      {cargandoPost ? (
-        <p>Cargando postulaciones…</p>
-      ) : !postulaciones || postulaciones.length === 0 ? (
-        <div className="empty-state">Aún no te has postulado a ninguna vacante.</div>
-      ) : (
-        <table>
-          <thead>
-            <tr><th>Vacante</th><th>Empresa</th><th>Matching</th><th>Estatus</th><th>Fecha</th><th></th></tr>
-          </thead>
-          <tbody>
-            {postulaciones.map((p) => (
-              <tr key={p.id_postulacion}>
-                <td>{p.Vacante?.titulo}</td>
-                <td>{p.Vacante?.Empresa?.nombre_empresa}</td>
-                <td>{p.matching_score}%</td>
-                <td><EstatusBadge estatus={p.estatus} /></td>
-                <td>{new Date(p.fecha_postulacion).toLocaleDateString()}</td>
-                <td>
-                  <button className="btn btn-outline" onClick={() => setChatAbierto(chatAbierto === p.id_postulacion ? null : p.id_postulacion)}>
-                    {chatAbierto === p.id_postulacion ? "Cerrar chat" : "Chat"}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {chatAbierto && (
-        <div style={{ marginTop: 16 }}>
-          <Chat idPostulacion={chatAbierto} miIdUsuario={idUsuario} />
-        </div>
-      )}
     </div>
   );
 }
