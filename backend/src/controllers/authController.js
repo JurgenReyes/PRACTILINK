@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { Usuario, Estudiante, Empresa } = require("../models");
 const { enviarCorreo } = require("../services/aws/ses");
+const { renderizarPlantilla } = require("../services/plantillasCorreo");
 
 const MAX_INTENTOS = 5;
 const MINUTOS_BLOQUEO = 15;
@@ -41,11 +42,10 @@ async function registro(req, res) {
 
     // RF-E03: correo de verificación (token válido 24h, firmado con JWT para no requerir tabla extra en el prototipo)
     const tokenVerificacion = jwt.sign({ id_usuario: usuario.id_usuario }, process.env.JWT_SECRET, { expiresIn: "24h" });
-    await enviarCorreo({
-      para: correo,
-      asunto: "Verifica tu cuenta en PractiLink",
-      texto: `Confirma tu cuenta con este enlace: ${process.env.FRONTEND_URL}/verificar?token=${tokenVerificacion}`,
+    const { asunto, texto } = await renderizarPlantilla("verificacion_cuenta", {
+      enlace: `${process.env.FRONTEND_URL}/verificar?token=${tokenVerificacion}`,
     });
+    await enviarCorreo({ para: correo, asunto, texto });
 
     return res.status(201).json({ mensaje: "Registro exitoso. Revisa tu correo para verificar tu cuenta." });
   } catch (err) {
@@ -95,6 +95,26 @@ async function login(req, res) {
     usuario.bloqueado_hasta = null;
     await usuario.save();
 
+    // RNF-15: 2FA obligatorio para cuentas de administrador. En vez de
+    // entregar el JWT de sesión de una vez, se manda un código de 6 dígitos
+    // por correo y se entrega un token intermedio (de solo 10 min de vida,
+    // uso "2fa") que el frontend debe canjear en /auth/verificar-2fa junto
+    // con el código para obtener el JWT real.
+    if (usuario.rol === "administrador") {
+      const codigo = String(crypto.randomInt(0, 1000000)).padStart(6, "0");
+      const tokenPreAuth = jwt.sign(
+        { id_usuario: usuario.id_usuario, uso: "2fa", codigo },
+        process.env.JWT_SECRET,
+        { expiresIn: "10m" }
+      );
+      await enviarCorreo({
+        para: usuario.correo,
+        asunto: "Tu código de verificación - PractiLink",
+        texto: `Tu código de acceso es: ${codigo}. Vence en 10 minutos. Si tú no intentaste iniciar sesión, ignora este correo.`,
+      });
+      return res.json({ requiere_2fa: true, tokenPreAuth });
+    }
+
     const token = jwt.sign(
       { id_usuario: usuario.id_usuario, rol: usuario.rol },
       process.env.JWT_SECRET,
@@ -108,6 +128,30 @@ async function login(req, res) {
   }
 }
 
+async function verificar2FA(req, res) {
+  try {
+    const { tokenPreAuth, codigo } = req.body;
+    const payload = jwt.verify(tokenPreAuth, process.env.JWT_SECRET);
+    if (payload.uso !== "2fa") throw new Error("token inválido");
+
+    if (payload.codigo !== String(codigo).trim()) {
+      return res.status(401).json({ error: "Código incorrecto" });
+    }
+
+    const usuario = await Usuario.findByPk(payload.id_usuario);
+    if (!usuario) return res.status(401).json({ error: "Usuario no encontrado" });
+
+    const token = jwt.sign(
+      { id_usuario: usuario.id_usuario, rol: usuario.rol },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || "8h" }
+    );
+    return res.json({ token, rol: usuario.rol });
+  } catch (err) {
+    return res.status(401).json({ error: "Código inválido o expirado. Vuelve a iniciar sesión." });
+  }
+}
+
 async function solicitarRecuperacion(req, res) {
   const { correo } = req.body;
   const usuario = await Usuario.findOne({ where: { correo } });
@@ -115,11 +159,10 @@ async function solicitarRecuperacion(req, res) {
 
   // RF-E06: token de un solo uso, vigencia máxima de 1 hora
   const token = jwt.sign({ id_usuario: usuario.id_usuario, uso: "recuperacion" }, process.env.JWT_SECRET, { expiresIn: "1h" });
-  await enviarCorreo({
-    para: correo,
-    asunto: "Recupera tu contraseña - PractiLink",
-    texto: `Restablece tu contraseña aquí: ${process.env.FRONTEND_URL}/restablecer?token=${token}`,
+  const { asunto, texto } = await renderizarPlantilla("recuperacion_password", {
+    enlace: `${process.env.FRONTEND_URL}/restablecer?token=${token}`,
   });
+  await enviarCorreo({ para: correo, asunto, texto });
   return res.json({ mensaje: "Si el correo existe, se enviará un enlace de recuperación." });
 }
 
@@ -139,4 +182,20 @@ async function restablecerPassword(req, res) {
   }
 }
 
-module.exports = { registro, verificarCorreo, login, solicitarRecuperacion, restablecerPassword };
+async function cambiarPassword(req, res) {
+  const { passwordActual, passwordNueva } = req.body;
+  const usuario = await Usuario.findByPk(req.usuario.id_usuario);
+  if (!usuario) return res.status(404).json({ error: "Usuario no encontrado" });
+
+  const ok = await bcrypt.compare(passwordActual, usuario.password_hash);
+  if (!ok) return res.status(401).json({ error: "La contraseña actual no es correcta" });
+
+  if (!validarPassword(passwordNueva)) {
+    return res.status(400).json({ error: "La nueva contraseña debe tener mínimo 8 caracteres, una mayúscula, un número y un carácter especial." });
+  }
+  usuario.password_hash = await bcrypt.hash(passwordNueva, 10);
+  await usuario.save();
+  return res.json({ mensaje: "Contraseña actualizada correctamente." });
+}
+
+module.exports = { registro, verificarCorreo, login, verificar2FA, solicitarRecuperacion, restablecerPassword, cambiarPassword };
