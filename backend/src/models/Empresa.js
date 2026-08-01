@@ -9,6 +9,7 @@ const Empresa = sequelize.define("Empresa", {
   giro: { type: DataTypes.STRING(100) },
   responsable: { type: DataTypes.STRING(150) },
   telefono: { type: DataTypes.STRING(20) },
+  logo_url: { type: DataTypes.STRING(255) },
   estatus_validacion: { type: DataTypes.ENUM("pendiente", "aprobada", "rechazada"), defaultValue: "pendiente" },
   motivo_rechazo: { type: DataTypes.STRING(255) },
 }, {
