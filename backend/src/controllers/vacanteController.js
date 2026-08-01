@@ -68,4 +68,17 @@ async function duplicar(req, res) {
   return res.status(201).json(copia);
 }
 
-module.exports = { listar, detalle, crear, actualizar, duplicar };
+// RF-E: un estudiante puede reportar una vacante como sospechosa/engañosa;
+// queda marcada para revisión del administrador en Moderación de Vacantes.
+async function reportar(req, res) {
+  const { motivo } = req.body;
+  if (!motivo || !motivo.trim()) return res.status(400).json({ error: "El motivo del reporte es obligatorio" });
+  const vacante = await Vacante.findByPk(req.params.id);
+  if (!vacante) return res.status(404).json({ error: "Vacante no encontrada" });
+  vacante.reportada = true;
+  vacante.motivo_reporte = motivo;
+  await vacante.save();
+  return res.json({ mensaje: "Gracias por tu reporte. Un administrador la revisará." });
+}
+
+module.exports = { listar, detalle, crear, actualizar, duplicar, reportar };
