@@ -17,31 +17,25 @@ CREATE TABLE usuarios (
   fecha_modificacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
-CREATE TABLE catalogo_universidades (
-  id_universidad INT AUTO_INCREMENT PRIMARY KEY,
-  nombre VARCHAR(150) NOT NULL UNIQUE
-);
-
-CREATE TABLE catalogo_carreras (
-  id_carrera INT AUTO_INCREMENT PRIMARY KEY,
-  nombre VARCHAR(150) NOT NULL UNIQUE
-);
-
+-- Nota: universidad/carrera se guardan como texto libre en este prototipo por
+-- simplicidad. RD-05 (catálogos administrables) queda documentado como mejora futura
+-- en el README, para no acoplar el modelo a tablas de catálogo aún no expuestas por la API.
 CREATE TABLE estudiantes (
   id_estudiante   INT AUTO_INCREMENT PRIMARY KEY,
   id_usuario      INT NOT NULL UNIQUE,
   nombre_completo VARCHAR(150) NOT NULL,
-  id_universidad  INT NULL,
-  id_carrera      INT NULL,
+  universidad     VARCHAR(150) NULL,
+  carrera         VARCHAR(150) NULL,
   semestre        INT NULL,
   promedio        DECIMAL(3,1) NULL,
   foto_url        VARCHAR(255) NULL,
   porcentaje_perfil INT NOT NULL DEFAULT 0,
+  experiencia_laboral JSON NULL COMMENT 'Arreglo de {puesto, empresa, periodo, descripcion}',
+  cv_url VARCHAR(255) NULL,
+  cv_nombre_original VARCHAR(255) NULL,
   fecha_creacion  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   fecha_modificacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario) ON DELETE CASCADE,
-  FOREIGN KEY (id_universidad) REFERENCES catalogo_universidades(id_universidad),
-  FOREIGN KEY (id_carrera) REFERENCES catalogo_carreras(id_carrera)
+  FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario) ON DELETE CASCADE
 );
 
 CREATE TABLE empresas (
@@ -52,6 +46,7 @@ CREATE TABLE empresas (
   giro             VARCHAR(100) NULL,
   responsable      VARCHAR(150) NULL,
   telefono         VARCHAR(20) NULL,
+  logo_url         VARCHAR(255) NULL,
   estatus_validacion ENUM('pendiente','aprobada','rechazada') NOT NULL DEFAULT 'pendiente',
   motivo_rechazo   VARCHAR(255) NULL,
   fecha_creacion   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -105,6 +100,8 @@ CREATE TABLE vacantes (
   beneficios        TEXT NULL,
   estatus           ENUM('borrador','publicada','pausada','cerrada') NOT NULL DEFAULT 'borrador',
   fecha_expiracion  DATE NULL,
+  reportada         BOOLEAN NOT NULL DEFAULT FALSE,
+  motivo_reporte    VARCHAR(255) NULL,
   fecha_creacion    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   fecha_modificacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (id_empresa) REFERENCES empresas(id_empresa) ON DELETE CASCADE
@@ -116,6 +113,12 @@ CREATE TABLE postulaciones (
   id_vacante        INT NOT NULL,
   estatus           ENUM('en_revision','evaluacion_pendiente','entrevista_programada','aceptado','rechazado') NOT NULL DEFAULT 'en_revision',
   matching_score    DECIMAL(5,2) NULL,
+  notas_internas    TEXT NULL,
+  fecha_entrevista  DATETIME NULL,
+  modalidad_entrevista ENUM('presencial','videollamada') NULL,
+  enlace_videollamada VARCHAR(255) NULL,
+  notas_entrevista  VARCHAR(255) NULL,
+  entrevista_confirmada BOOLEAN NOT NULL DEFAULT FALSE,
   fecha_postulacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   fecha_modificacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY unico_estudiante_vacante (id_estudiante, id_vacante),
@@ -129,6 +132,8 @@ CREATE TABLE examenes (
   tipo           ENUM('tecnico','no_tecnico') NOT NULL,
   tiempo_limite_min INT NOT NULL DEFAULT 30,
   finalizado     BOOLEAN NOT NULL DEFAULT FALSE,
+  preguntas_json JSON NOT NULL,
+  respuestas_json JSON NULL,
   fecha_creacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (id_postulacion) REFERENCES postulaciones(id_postulacion) ON DELETE CASCADE
 );
@@ -175,3 +180,58 @@ CREATE TABLE bitacora_auditoria (
 
 CREATE INDEX idx_vacantes_busqueda ON vacantes (modalidad, estatus, ubicacion);
 CREATE INDEX idx_postulaciones_estatus ON postulaciones (estatus);
+
+-- RD-05: catálogos administrables (universidades, carreras) - gestionados por el admin (RF-A18)
+CREATE TABLE catalogo_universidades (
+  id_universidad INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(150) NOT NULL UNIQUE
+);
+
+CREATE TABLE catalogo_carreras (
+  id_carrera INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(150) NOT NULL UNIQUE
+);
+
+-- RF-A12: parámetros configurables del módulo de IA (clave/valor simple)
+CREATE TABLE configuracion_ia (
+  clave VARCHAR(100) PRIMARY KEY,
+  valor VARCHAR(255) NOT NULL,
+  descripcion VARCHAR(255) NULL,
+  fecha_modificacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+INSERT INTO configuracion_ia (clave, valor, descripcion) VALUES
+('peso_carrera', '30', 'Puntos otorgados si la carrera del estudiante coincide con la solicitada'),
+('peso_promedio', '20', 'Puntos máximos otorgados según el promedio académico'),
+('puntaje_base', '50', 'Puntaje base de matching antes de aplicar ponderaciones'),
+('dificultad_examenes', 'media', 'Nivel de dificultad de los exámenes generados (baja/media/alta)');
+
+-- RF-E32: vacantes guardadas como favoritas por el estudiante
+CREATE TABLE favoritos (
+  id_favorito   INT AUTO_INCREMENT PRIMARY KEY,
+  id_estudiante INT NOT NULL,
+  id_vacante    INT NOT NULL,
+  fecha_creacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY unico_favorito (id_estudiante, id_vacante),
+  FOREIGN KEY (id_estudiante) REFERENCES estudiantes(id_estudiante) ON DELETE CASCADE,
+  FOREIGN KEY (id_vacante) REFERENCES vacantes(id_vacante) ON DELETE CASCADE
+);
+
+-- RF-A22: avisos generales visibles para estudiantes y/o empresas
+CREATE TABLE avisos (
+  id_aviso INT AUTO_INCREMENT PRIMARY KEY,
+  titulo VARCHAR(150) NOT NULL,
+  mensaje TEXT NOT NULL,
+  dirigido_a ENUM('todos','estudiantes','empresas') NOT NULL DEFAULT 'todos',
+  activo BOOLEAN NOT NULL DEFAULT TRUE,
+  fecha_creacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE plantillas_correo (
+  clave VARCHAR(60) PRIMARY KEY,
+  nombre VARCHAR(120) NOT NULL,
+  asunto VARCHAR(200) NOT NULL,
+  cuerpo TEXT NOT NULL,
+  fecha_creacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  fecha_modificacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
