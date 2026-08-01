@@ -1,7 +1,24 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { useApi } from "../hooks/useApi";
+
+// El logo de la empresa se sirve desde el backend directo (fuera de /api).
+const BASE_ARCHIVOS = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api\/?$/, "");
+
+// El logo de la empresa; si la URL falla al cargar (archivo borrado, etc.)
+// cae de nuevo al emoji genérico en vez de mostrar un ícono de imagen rota.
+function LogoEmpresa({ src, nombre, tamano = 18 }) {
+  const [fallo, setFallo] = useState(false);
+  if (fallo) return "🏢";
+  return (
+    <img
+      src={src} alt={nombre} onError={() => setFallo(true)}
+      style={{ width: tamano, height: tamano, borderRadius: 4, objectFit: "contain", background: "#fff", flexShrink: 0 }}
+    />
+  );
+}
 
 export default function Vacantes() {
   const [filtrosAplicados, setFiltrosAplicados] = useState({});
@@ -88,8 +105,13 @@ export default function Vacantes() {
         <div className="grid grid-3">
           {vacantes.map((v) => (
             <div key={v.id_vacante} className="card vacante-card">
-              <h3 style={{ fontSize: 16 }}>{v.titulo}</h3>
-              <span className="empresa">🏢 {v.Empresa?.nombre_empresa}</span>
+              <h3 style={{ fontSize: 16 }}><Link to={`/vacantes/${v.id_vacante}`}>{v.titulo}</Link></h3>
+              <span className="empresa" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                {v.Empresa?.logo_url ? (
+                  <LogoEmpresa src={`${BASE_ARCHIVOS}${v.Empresa.logo_url}`} nombre={v.Empresa.nombre_empresa} tamano={18} />
+                ) : "🏢"}
+                {v.Empresa?.nombre_empresa}
+              </span>
               <div className="tags">
                 <span className="tag">{v.modalidad}</span>
                 {v.ubicacion && <span className="tag">{v.ubicacion}</span>}
