@@ -1,33 +1,23 @@
 import { useEffect, useRef, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
 import api from "../api/client";
 import { usePolling } from "../hooks/usePolling";
+import { cargarNotificaciones, marcarTodasLeidas, seleccionarNoLeidas } from "../store/notificacionesSlice";
 
 export default function Notificaciones() {
   const [abierto, setAbierto] = useState(false);
-  const [items, setItems] = useState([]);
   const ref = useRef(null);
+  const dispatch = useDispatch();
+  const items = useSelector((state) => state.notificaciones.items);
+  const noLeidas = useSelector(seleccionarNoLeidas);
 
-  async function cargar() {
-    try {
-      const { data } = await api.get("/notificaciones");
-      setItems(data);
-    } catch { /* silencioso: usuario puede no tener sesión aún */ }
-  }
-
-  usePolling(cargar, 20000, []);
+  usePolling(() => dispatch(cargarNotificaciones()), 20000, []);
 
   useEffect(() => {
     function fuera(e) { if (ref.current && !ref.current.contains(e.target)) setAbierto(false); }
     document.addEventListener("click", fuera);
     return () => document.removeEventListener("click", fuera);
   }, []);
-
-  const noLeidas = items.filter((n) => !n.leido).length;
-
-  async function marcarTodas() {
-    await api.put("/notificaciones/marcar-todas");
-    cargar();
-  }
 
   return (
     <div ref={ref} style={{ position: "relative" }}>
@@ -43,7 +33,7 @@ export default function Notificaciones() {
         <div className="card" style={{ position: "absolute", right: 0, top: 30, width: 320, maxHeight: 380, overflowY: "auto", zIndex: 20, padding: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <strong style={{ fontSize: 14 }}>Notificaciones</strong>
-            <button onClick={marcarTodas} style={{ fontSize: 12, background: "none", border: "none", color: "var(--color-primary)", cursor: "pointer" }}>Marcar todas leídas</button>
+            <button onClick={() => dispatch(marcarTodasLeidas())} style={{ fontSize: 12, background: "none", border: "none", color: "var(--color-primary)", cursor: "pointer" }}>Marcar todas leídas</button>
           </div>
           {items.length === 0 ? (
             <p style={{ fontSize: 13, color: "var(--color-ink-soft)" }}>Sin notificaciones por ahora.</p>
