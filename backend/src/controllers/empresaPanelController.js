@@ -1,8 +1,34 @@
 const { Op } = require("sequelize");
 const { Vacante, Postulacion, Estudiante, Empresa, Usuario, Examen, ResultadoExamen } = require("../models");
+const { enviarCSV } = require("../services/csv");
 
 async function obtenerEmpresa(req) {
   return Empresa.findOne({ where: { id_usuario: req.usuario.id_usuario } });
+}
+
+// Perfil de la empresa: datos generales de la cuenta (nombre, RFC, giro,
+// responsable, teléfono). A diferencia del perfil del estudiante, el correo
+// y el estatus de validación no son editables por la propia empresa.
+async function obtenerPerfilEmpresa(req, res) {
+  const empresa = await Empresa.findOne({
+    where: { id_usuario: req.usuario.id_usuario },
+    include: [{ model: Usuario, attributes: ["correo", "fecha_creacion"] }],
+  });
+  if (!empresa) return res.status(404).json({ error: "Perfil no encontrado" });
+  return res.json(empresa);
+}
+
+async function actualizarPerfilEmpresa(req, res) {
+  const empresa = await Empresa.findOne({ where: { id_usuario: req.usuario.id_usuario } });
+  if (!empresa) return res.status(404).json({ error: "Perfil no encontrado" });
+
+  const { nombre_empresa, giro, responsable, telefono } = req.body;
+  if (!nombre_empresa?.trim()) return res.status(400).json({ error: "El nombre de la empresa es obligatorio" });
+
+  // El RFC y el estatus de validación no se tocan aquí: cambiarlos requeriría
+  // que el admin la vuelva a validar, así que se maneja aparte si hace falta.
+  await empresa.update({ nombre_empresa, giro, responsable, telefono });
+  return res.json(empresa);
 }
 
 // Todas las vacantes de la empresa, sin importar estatus (a diferencia del listado público)
@@ -13,6 +39,22 @@ async function misVacantes(req, res) {
     order: [["fecha_creacion", "DESC"]],
   });
   return res.json(vacantes);
+}
+
+// Entrevistas: todas las que la empresa tiene programadas, sin importar
+// la vacante — para la pantalla "Entrevistas" del panel de empresa.
+async function misEntrevistas(req, res) {
+  const empresa = await obtenerEmpresa(req);
+  const vacantes = await Vacante.findAll({ where: { id_empresa: empresa.id_empresa }, attributes: ["id_vacante"] });
+  const idsVacantes = vacantes.map((v) => v.id_vacante);
+  if (idsVacantes.length === 0) return res.json([]);
+
+  const entrevistas = await Postulacion.findAll({
+    where: { id_vacante: idsVacantes, fecha_entrevista: { [Op.ne]: null } },
+    include: [{ model: Estudiante }, { model: Vacante, attributes: ["titulo"] }],
+    order: [["fecha_entrevista", "ASC"]],
+  });
+  return res.json(entrevistas);
 }
 
 // RF-EM14/RF-EM15: panel de candidatos por vacante, con filtros
@@ -79,6 +121,7 @@ async function dashboard(req, res) {
     total_postulaciones: postulaciones.length,
     vacantes_activas: totalActivas,
     vacantes_cerradas: totalCerradas,
+    entrevistas_programadas: postulaciones.filter((p) => p.fecha_entrevista).length,
     postulaciones_por_estatus: porEstatus,
     postulaciones_por_vacante: porVacante,
   });
@@ -104,11 +147,7 @@ async function exportarCandidatosCSV(req, res) {
       p.Estudiante.carrera || "", p.matching_score || "", p.estatus, p.fecha_postulacion.toISOString(),
     ]);
   }
-  const csv = filas.map((fila) => fila.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
-
-  res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition", "attachment; filename=candidatos_practilink.csv");
-  return res.send(csv);
+  return enviarCSV(res, { filas, nombreArchivo: "candidatos_practilink.csv" });
 }
 
 // RF-EM18: programar entrevista, notifica automáticamente al estudiante
@@ -138,4 +177,4 @@ async function programarEntrevista(req, res) {
   return res.json(postulacion);
 }
 
-module.exports = { misVacantes, candidatosPorVacante, actualizarNotas, dashboard, exportarCandidatosCSV, programarEntrevista };
+module.exports = { misVacantes, candidatosPorVacante, actualizarNotas, dashboard, exportarCandidatosCSV, programarEntrevista, misEntrevistas, obtenerPerfilEmpresa, actualizarPerfilEmpresa };
