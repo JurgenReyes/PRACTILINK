@@ -2,12 +2,13 @@ import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 const ITEMS_ESTUDIANTE = [
-  { to: "/", label: "🏠 Inicio", match: "/" },
-  { to: "/estudiante", label: "👤 Mi Perfil", match: "/estudiante" },
-  { to: "/vacantes", label: "💼 Vacantes", match: "/vacantes" },
-  { to: "/estudiante#postulaciones", label: "🚀 Postulaciones", match: "#postulaciones" },
-  { to: "/entrevistas", label: "🗓️ Entrevistas", match: "/entrevistas" },
-  { to: "/examenes", label: "🧠 Evaluación IA", match: "/examenes" },
+  { to: "/estudiante/inicio", label: "🏠 Inicio" },
+  { to: "/estudiante", label: "👤 Mi Perfil" },
+  { to: "/vacantes", label: "💼 Vacantes" },
+  { to: "/postulaciones", label: "🚀 Postulaciones" },
+  { to: "/entrevistas", label: "🗓️ Entrevistas" },
+  { to: "/examenes", label: "🧠 Evaluación IA" },
+  { to: "/configuracion", label: "⚙️ Configuración" },
 ];
 
 export default function Sidebar() {
@@ -16,15 +17,13 @@ export default function Sidebar() {
 
   if (rol !== "estudiante") return null;
 
-  const actual = location.pathname + location.hash;
-
   return (
     <aside className="sidebar">
       {ITEMS_ESTUDIANTE.map((item) => (
         <Link
           key={item.label}
           to={item.to}
-          className={"side-item" + (actual === item.match || (item.match !== "#postulaciones" && location.pathname === item.match && !location.hash) ? " active" : "")}
+          className={"side-item" + (location.pathname === item.to ? " active" : "")}
         >
           {item.label}
         </Link>
